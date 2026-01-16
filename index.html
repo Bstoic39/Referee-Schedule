@@ -6,24 +6,19 @@
   <meta name="theme-color" content="#111827" />
   <title>Referee Schedule</title>
 
-  <!-- Correct filenames from your repo -->
   <link rel="manifest" href="site.webmanifest" />
   <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <link rel="icon" href="favicon.ico" />
 
-  <!-- Tailwind CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 
 <body class="bg-gray-900 text-white">
   <div id="root"></div>
 
-  <!-- React 18 (UMD) -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom-client.production.min.js"></script>
-
-  <!-- Lucide Icons (UMD) -->
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 
   <script>
@@ -38,8 +33,6 @@
         league: '',
         date: '',
         time: '',
-        facility: '',
-        partner: '',
         numGames: 1,
         rate: ''
       });
@@ -68,33 +61,18 @@
         };
 
         setGames([...games, newGame].sort((a, b) => new Date(a.date) - new Date(b.date)));
-
-        setFormData({
-          league: '',
-          date: '',
-          time: '',
-          facility: '',
-          partner: '',
-          numGames: 1,
-          rate: ''
-        });
-
+        setFormData({ league: '', date: '', time: '', numGames: 1, rate: '' });
         setShowForm(false);
       };
 
       const deleteGame = (id) => setGames(games.filter(g => g.id !== id));
-
       const totalEarnings = games.reduce((s, g) => s + (Number(g.total) || 0), 0);
 
       return React.createElement(
         'div',
-        { className: 'min-h-screen bg-gray-900 text-white p-4 max-w-md mx-auto' },
+        { className: 'min-h-screen p-4 max-w-md mx-auto' },
 
-        React.createElement(
-          'h1',
-          { className: 'text-2xl font-bold mb-6 text-center' },
-          'Referee Schedule'
-        ),
+        React.createElement('h1', { className: 'text-2xl font-bold mb-6 text-center' }, 'Referee Schedule'),
 
         React.createElement(
           'div',
@@ -104,11 +82,7 @@
         ),
 
         games.length === 0
-          ? React.createElement(
-              'div',
-              { className: 'text-center text-gray-400 py-6' },
-              'No games scheduled'
-            )
+          ? React.createElement('div', { className: 'text-center text-gray-400 py-6' }, 'No games scheduled')
           : games.map(game =>
               React.createElement(
                 'div',
@@ -127,10 +101,7 @@
                 ),
                 React.createElement(
                   'button',
-                  {
-                    onClick: () => deleteGame(game.id),
-                    className: 'text-red-400 text-sm mt-2'
-                  },
+                  { onClick: () => deleteGame(game.id), className: 'text-red-400 text-sm mt-2' },
                   'Delete'
                 )
               )
@@ -138,10 +109,7 @@
 
         React.createElement(
           'button',
-          {
-            onClick: () => setShowForm(true),
-            className: 'fixed bottom-6 right-6 bg-blue-600 p-4 rounded-full shadow-lg'
-          },
+          { onClick: () => setShowForm(true), className: 'fixed bottom-6 right-6 bg-blue-600 p-4 rounded-full shadow-lg' },
           React.createElement(Plus, { size: 24 })
         ),
 
@@ -194,29 +162,14 @@
               React.createElement(
                 'div',
                 { className: 'flex space-x-2' },
-                React.createElement(
-                  'button',
-                  {
-                    className: 'flex-1 bg-gray-600 p-2 rounded',
-                    onClick: () => setShowForm(false)
-                  },
-                  'Cancel'
-                ),
-                React.createElement(
-                  'button',
-                  {
-                    className: 'flex-1 bg-blue-600 p-2 rounded',
-                    onClick: addGame
-                  },
-                  'Add'
-                )
+                React.createElement('button', { className: 'flex-1 bg-gray-600 p-2 rounded', onClick: () => setShowForm(false) }, 'Cancel'),
+                React.createElement('button', { className: 'flex-1 bg-blue-600 p-2 rounded', onClick: addGame }, 'Add')
               )
             )
           )
       );
     }
 
-    // React 18: createRoot is on ReactDOMClient in UMD builds
     const root = ReactDOMClient.createRoot(document.getElementById('root'));
     root.render(React.createElement(RefereeScheduleApp));
   </script>
