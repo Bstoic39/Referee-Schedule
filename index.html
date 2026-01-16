@@ -16,11 +16,12 @@
 <body class="bg-gray-900 text-white">
   <div id="root"></div>
 
+  <!-- React (UMD) -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 
   <script>
-    const { useEffect, useMemo, useRef, useState } = React;
+    const { useEffect, useMemo, useState } = React;
 
     // ---------- Date helpers ----------
     function pad2(n) { return String(n).padStart(2, '0'); }
@@ -64,9 +65,46 @@
     }
 
     // ---------- Storage keys ----------
-    const STORAGE_ACTIVE   = 'refGames_v4_active';
-    const STORAGE_ARCHIVE  = 'refGames_v4_archive';  // { "YYYY-MM": [games...] }
-    const STORAGE_SETTINGS = 'refGames_v4_settings'; // { notificationsEnabled: boolean }
+    const STORAGE_ACTIVE  = 'refGames_v6_active';
+    const STORAGE_ARCHIVE = 'refGames_v6_archive'; // { "YYYY-MM": [games...] }
+
+    // ---------- Icons (inline SVG) ----------
+    function TrashIcon({ className = '' }) {
+      return React.createElement(
+        'svg',
+        {
+          viewBox: '0 0 24 24',
+          fill: 'none',
+          stroke: 'currentColor',
+          strokeWidth: 2,
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+          className
+        },
+        React.createElement('polyline', { points: '3 6 5 6 21 6' }),
+        React.createElement('path', { d: 'M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6' }),
+        React.createElement('path', { d: 'M10 11v6' }),
+        React.createElement('path', { d: 'M14 11v6' }),
+        React.createElement('path', { d: 'M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2' })
+      );
+    }
+
+    function WhistleIcon({ className = '' }) {
+      return React.createElement(
+        'svg',
+        {
+          viewBox: '0 0 24 24',
+          fill: 'none',
+          stroke: 'currentColor',
+          strokeWidth: 2,
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+          className
+        },
+        React.createElement('path', { d: 'M3 12h11a4 4 0 1 1 0 8H9a6 6 0 0 1-6-6z' }),
+        React.createElement('circle', { cx: 19, cy: 16, r: 2 })
+      );
+    }
 
     function RefereeScheduleApp() {
       const [view, setView] = useState('list'); // list | calendar | archive
@@ -76,10 +114,6 @@
 
       const [calendarCursor, setCalendarCursor] = useState(() => new Date());
       const [selectedDateKey, setSelectedDateKey] = useState(null);
-
-      const [notificationsEnabled, setNotificationsEnabled] = useState(false);
-      const swRegRef = useRef(null);
-      const scheduledTimeoutsRef = useRef([]);
 
       const [formData, setFormData] = useState({
         league: '',
@@ -91,30 +125,13 @@
         rate: ''
       });
 
-      // ----- Service worker registration (NO caching; notifications only) -----
-      useEffect(() => {
-        (async () => {
-          if (!('serviceWorker' in navigator)) return;
-          try {
-            await navigator.serviceWorker.register('./service-worker.js', { scope: './' });
-            const reg = await navigator.serviceWorker.ready;
-            swRegRef.current = reg;
-          } catch (e) {
-            console.warn('Service worker registration failed:', e);
-          }
-        })();
-      }, []);
-
       // ----- Load from storage -----
       useEffect(() => {
         try {
           const savedActive = localStorage.getItem(STORAGE_ACTIVE);
           const savedArchive = localStorage.getItem(STORAGE_ARCHIVE);
-          const savedSettings = localStorage.getItem(STORAGE_SETTINGS);
-
           if (savedActive) setActiveGames(JSON.parse(savedActive));
           if (savedArchive) setArchiveByMonth(JSON.parse(savedArchive));
-          if (savedSettings) setNotificationsEnabled(Boolean(JSON.parse(savedSettings).notificationsEnabled));
         } catch (e) {
           console.warn('Failed to load storage', e);
         }
@@ -123,7 +140,6 @@
       // ----- Persist -----
       useEffect(() => { try { localStorage.setItem(STORAGE_ACTIVE, JSON.stringify(activeGames)); } catch {} }, [activeGames]);
       useEffect(() => { try { localStorage.setItem(STORAGE_ARCHIVE, JSON.stringify(archiveByMonth)); } catch {} }, [archiveByMonth]);
-      useEffect(() => { try { localStorage.setItem(STORAGE_SETTINGS, JSON.stringify({ notificationsEnabled })); } catch {} }, [notificationsEnabled]);
 
       // ----- Auto-archive past games -----
       useEffect(() => {
@@ -157,111 +173,6 @@
         return () => clearInterval(id);
       }, [activeGames]);
 
-      // ----- Notification helpers (via SW showNotification) -----
-      function clearScheduledTimeouts() {
-        for (const id of scheduledTimeoutsRef.current) clearTimeout(id);
-        scheduledTimeoutsRef.current = [];
-      }
-
-      async function showReminderNotification(game) {
-        const reg = swRegRef.current || (await navigator.serviceWorker?.ready?.catch(() => null));
-        if (!reg || !reg.showNotification) return;
-
-        const title = 'Referee game in 2 hours';
-        const when = `${formatNiceDate(game.date)}${game.time ? ` @ ${game.time}` : ''}`;
-        const bodyParts = [game.league, when];
-        if (game.facility) bodyParts.push(game.facility);
-        const body = bodyParts.filter(Boolean).join(' • ');
-
-        await reg.showNotification(title, {
-          body,
-          tag: `game-${game.id}`,
-          renotify: false
-        });
-      }
-
-      function scheduleNotifications() {
-        clearScheduledTimeouts();
-        if (!notificationsEnabled) return;
-        if (!('Notification' in window)) return;
-
-        const now = Date.now();
-        const TWO_HOURS = 2 * 60 * 60 * 1000;
-
-        for (const g of activeGames) {
-          const gameDt = parseGameDateTime(g).getTime();
-          const fireAt = gameDt - TWO_HOURS;
-          if (fireAt <= now) continue;
-
-          const delay = fireAt - now;
-
-          // cap very long timeouts; we'll rescan every minute
-          const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
-          if (delay > SEVEN_DAYS) continue;
-
-          const id = setTimeout(() => {
-            if (Notification.permission === 'granted') {
-              showReminderNotification(g).catch(e => console.warn('showNotification failed', e));
-            }
-          }, delay);
-
-          scheduledTimeoutsRef.current.push(id);
-        }
-      }
-
-      useEffect(() => {
-        scheduleNotifications();
-        const id = setInterval(scheduleNotifications, 60 * 1000);
-        return () => {
-          clearInterval(id);
-          clearScheduledTimeouts();
-        };
-      }, [activeGames, notificationsEnabled]);
-
-      async function enableNotifications() {
-        if (!('Notification' in window)) {
-          alert('Notifications are not supported in this browser.');
-          return;
-        }
-
-        // already granted
-        if (Notification.permission === 'granted') {
-          setNotificationsEnabled(true);
-          return;
-        }
-
-        let perm;
-        try {
-          perm = await Notification.requestPermission();
-        } catch (e) {
-          alert('Notification permission prompt failed.');
-          return;
-        }
-
-        if (perm !== 'granted') {
-          alert('Notification permission was not granted.');
-          setNotificationsEnabled(false);
-          return;
-        }
-
-        setNotificationsEnabled(true);
-
-        // Optional test via SW (non-fatal if it fails)
-        try {
-          const reg = swRegRef.current || (await navigator.serviceWorker.ready);
-          await reg.showNotification('Notifications enabled', {
-            body: 'Reminders will trigger 2 hours before games while the app is open.'
-          });
-        } catch (e) {
-          console.log('Test notification failed (non-fatal):', e);
-        }
-      }
-
-      function disableNotifications() {
-        setNotificationsEnabled(false);
-        clearScheduledTimeouts();
-      }
-
       // ----- CRUD -----
       function addGame() {
         if (!formData.league || !formData.date) return;
@@ -281,9 +192,7 @@
           total: numGames * rate
         };
 
-        setActiveGames(prev =>
-          [...prev, newGame].sort((a, b) => parseGameDateTime(a) - parseGameDateTime(b))
-        );
+        setActiveGames(prev => [...prev, newGame].sort((a, b) => parseGameDateTime(a) - parseGameDateTime(b)));
 
         setFormData({
           league: '',
@@ -294,7 +203,6 @@
           numGames: 1,
           rate: ''
         });
-
         setShowForm(false);
       }
 
@@ -369,31 +277,43 @@
         return React.createElement(
           'div',
           { className: 'bg-gray-800 p-4 rounded-lg mb-3' },
-          React.createElement('div', { className: 'font-semibold text-lg' }, game.league),
           React.createElement(
             'div',
-            { className: 'text-sm text-gray-400 mb-2' },
-            formatNiceDate(game.date) + (game.time ? ` @ ${game.time}` : '')
-          ),
-          (game.facility || game.partner)
-            ? React.createElement(
+            { className: 'flex justify-between items-start gap-2' },
+            React.createElement(
+              'div',
+              null,
+              React.createElement('div', { className: 'font-semibold text-lg' }, game.league),
+              React.createElement(
                 'div',
-                { className: 'text-sm text-gray-300 mb-2' },
-                (game.facility ? `📍 ${game.facility}` : '') +
-                (game.facility && game.partner ? ' • ' : '') +
-                (game.partner ? `🤝 ${game.partner}` : '')
-              )
-            : null,
+                { className: 'text-sm text-gray-400 mb-1' },
+                formatNiceDate(game.date) + (game.time ? ` @ ${game.time}` : '')
+              ),
+              (game.facility || game.partner)
+                ? React.createElement(
+                    'div',
+                    { className: 'text-sm text-gray-300 mb-1' },
+                    (game.facility ? `📍 ${game.facility}` : '') +
+                    (game.facility && game.partner ? ' • ' : '') +
+                    (game.partner ? `🤝 ${game.partner}` : '')
+                  )
+                : null
+            ),
+            React.createElement(
+              'button',
+              {
+                onClick: onDelete,
+                title: 'Delete',
+                className: 'text-red-400 hover:text-red-300 active:scale-95 transition p-1 rounded'
+              },
+              React.createElement(TrashIcon, { className: 'w-5 h-5' })
+            )
+          ),
           React.createElement(
             'div',
-            { className: 'flex justify-between text-sm items-center' },
+            { className: 'flex justify-between text-sm items-center mt-2' },
             React.createElement('span', null, `${game.numGames} game(s) @ $${game.rate}`),
             React.createElement('span', { className: 'text-green-400 font-semibold' }, `$${game.total}`)
-          ),
-          React.createElement(
-            'button',
-            { onClick: onDelete, className: 'mt-3 text-red-300 hover:text-red-200 text-sm' },
-            'Delete'
           )
         );
       }
@@ -404,33 +324,9 @@
           null,
           React.createElement(
             'div',
-            { className: 'bg-gray-800 p-4 rounded-lg mb-4 flex items-center justify-between gap-3' },
-            React.createElement(
-              'div',
-              null,
-              React.createElement('div', { className: 'text-sm text-gray-400' }, 'Active Earnings'),
-              React.createElement('div', { className: 'text-xl font-bold text-green-400' }, `$${totalEarningsActive}`)
-            ),
-            React.createElement(
-              'div',
-              { className: 'flex flex-col items-end gap-2' },
-              notificationsEnabled
-                ? React.createElement(
-                    'button',
-                    { className: 'text-xs bg-gray-700 hover:bg-gray-600 px-3 py-2 rounded', onClick: disableNotifications },
-                    'Notifications: ON'
-                  )
-                : React.createElement(
-                    'button',
-                    { className: 'text-xs bg-gray-700 hover:bg-gray-600 px-3 py-2 rounded', onClick: enableNotifications },
-                    'Enable notifications'
-                  ),
-              React.createElement(
-                'div',
-                { className: 'text-[11px] text-gray-400 text-right leading-snug max-w-[220px]' },
-                'SW notifications are more reliable on Android. Still requires app open for timers.'
-              )
-            )
+            { className: 'bg-gray-800 p-4 rounded-lg mb-4' },
+            React.createElement('div', { className: 'text-sm text-gray-400' }, 'Active Earnings'),
+            React.createElement('div', { className: 'text-xl font-bold text-green-400' }, `$${totalEarningsActive}`)
           ),
 
           activeGames.length === 0
@@ -533,7 +429,7 @@
             cells.map((cell, idx) => {
               const dk = toLocalDateKey(cell.date);
               const dayNum = cell.date.getDate();
-              const items = gamesByDateKey[dk] || [];
+              const hasActive = (gamesByDateKey[dk] || []).length > 0;
               const isToday = dk === todayKey;
 
               return React.createElement(
@@ -549,19 +445,14 @@
                 },
                 React.createElement(
                   'div',
-                  { className: (cell.inMonth ? 'text-gray-200' : 'text-gray-600') + ' text-xs mb-1' },
-                  dayNum
-                ),
-                items.slice(0, 2).map(g =>
-                  React.createElement(
-                    'div',
-                    { key: g.id, className: 'text-[11px] bg-gray-700 rounded px-1 py-0.5 mb-1 truncate' },
-                    (g.time ? `${g.time} ` : '') + g.league
-                  )
-                ),
-                items.length > 2
-                  ? React.createElement('div', { className: 'text-[11px] text-gray-400' }, `+${items.length - 2} more`)
-                  : null
+                  { className: (cell.inMonth ? 'text-gray-200' : 'text-gray-600') + ' text-xs mb-1 flex justify-between' },
+                  React.createElement('span', null, dayNum),
+                  hasActive
+                    ? React.createElement('span', { className: 'text-green-400 flex items-center justify-center' },
+                        React.createElement(WhistleIcon, { className: 'w-4 h-4' })
+                      )
+                    : null
+                )
               );
             })
           ),
@@ -603,7 +494,7 @@
       // ----- Main render -----
       return React.createElement(
         'div',
-        { className: 'min-h-screen p-4 max-w-md mx-auto' },
+        { className: 'min-h-screen p-4 max-w-md mx-auto pb-24' },
 
         React.createElement('h1', { className: 'text-2xl font-bold mb-4 text-center' }, 'Referee Schedule'),
 
@@ -621,14 +512,17 @@
             ? React.createElement(CalendarView)
             : React.createElement(ArchiveView),
 
+        // Expanded Add button (only in List view)
         view === 'list' &&
           React.createElement(
             'button',
             {
               onClick: () => setShowForm(true),
-              className: 'fixed bottom-6 right-6 bg-blue-600 hover:bg-blue-500 p-4 rounded-full shadow-lg text-2xl leading-none'
+              className:
+                'fixed bottom-6 left-1/2 -translate-x-1/2 bg-blue-600 hover:bg-blue-500 px-6 py-3 rounded-full shadow-lg font-semibold flex items-center gap-2'
             },
-            '+'
+            React.createElement('span', { className: 'text-xl leading-none' }, '+'),
+            'Add Game'
           ),
 
         showForm &&
