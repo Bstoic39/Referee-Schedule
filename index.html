@@ -6,27 +6,29 @@
   <meta name="theme-color" content="#111827" />
   <title>Referee Schedule</title>
 
+  <!-- Match your repo filenames -->
   <link rel="manifest" href="site.webmanifest" />
   <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <link rel="icon" href="favicon.ico" />
 
+  <!-- Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 
 <body class="bg-gray-900 text-white">
+  <!-- React mounts here -->
   <div id="root"></div>
 
-ReactDOM.render(
-  React.createElement(RefereeScheduleApp),
-  document.getElementById('root')
-);  
+  <!-- React (UMD) -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom-client.production.min.js"></script>
+
+  <!-- Lucide Icons (UMD) -->
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 
   <script>
-    const { useState, useEffect } = React;
-    const { Plus } = lucide;
+    const { useState, useEffect, useMemo } = React;
+    const { Plus, Trash2 } = lucide;
 
     function RefereeScheduleApp() {
       const [games, setGames] = useState([]);
@@ -36,17 +38,33 @@ ReactDOM.render(
         league: '',
         date: '',
         time: '',
+        facility: '',
+        partner: '',
         numGames: 1,
         rate: ''
       });
 
+      // Load from localStorage once
       useEffect(() => {
-        const saved = localStorage.getItem('refGames');
-        if (saved) setGames(JSON.parse(saved));
+        try {
+          const saved = localStorage.getItem('refGames');
+          if (saved) setGames(JSON.parse(saved));
+        } catch (e) {
+          console.warn('Failed to load saved games', e);
+        }
       }, []);
 
+      // Save to localStorage whenever games changes
       useEffect(() => {
-        localStorage.setItem('refGames', JSON.stringify(games));
+        try {
+          localStorage.setItem('refGames', JSON.stringify(games));
+        } catch (e) {
+          console.warn('Failed to save games', e);
+        }
+      }, [games]);
+
+      const totalEarnings = useMemo(() => {
+        return games.reduce((sum, g) => sum + (Number(g.total) || 0), 0);
       }, [games]);
 
       const addGame = () => {
@@ -57,26 +75,53 @@ ReactDOM.render(
 
         const newGame = {
           id: Date.now(),
-          ...formData,
+          league: formData.league.trim(),
+          date: formData.date,
+          time: formData.time,
+          facility: formData.facility.trim(),
+          partner: formData.partner.trim(),
           numGames,
           rate,
           total: numGames * rate
         };
 
-        setGames([...games, newGame].sort((a, b) => new Date(a.date) - new Date(b.date)));
-        setFormData({ league: '', date: '', time: '', numGames: 1, rate: '' });
+        setGames(prev =>
+          [...prev, newGame].sort((a, b) => new Date(a.date) - new Date(b.date))
+        );
+
+        setFormData({
+          league: '',
+          date: '',
+          time: '',
+          facility: '',
+          partner: '',
+          numGames: 1,
+          rate: ''
+        });
+
         setShowForm(false);
       };
 
-      const deleteGame = (id) => setGames(games.filter(g => g.id !== id));
-      const totalEarnings = games.reduce((s, g) => s + (Number(g.total) || 0), 0);
+      const deleteGame = (id) => {
+        setGames(prev => prev.filter(g => g.id !== id));
+      };
+
+      // UI helpers
+      const inputClass =
+        "w-full mb-2 p-2 bg-gray-700 rounded outline-none focus:ring-2 focus:ring-blue-500";
 
       return React.createElement(
         'div',
-        { className: 'min-h-screen p-4 max-w-md mx-auto' },
+        { className: 'min-h-screen bg-gray-900 text-white p-4 max-w-md mx-auto' },
 
-        React.createElement('h1', { className: 'text-2xl font-bold mb-6 text-center' }, 'Referee Schedule'),
+        // Header
+        React.createElement(
+          'h1',
+          { className: 'text-2xl font-bold mb-6 text-center' },
+          'Referee Schedule'
+        ),
 
+        // Earnings card
         React.createElement(
           'div',
           { className: 'bg-gray-800 p-4 rounded-lg mb-4' },
@@ -84,97 +129,167 @@ ReactDOM.render(
           React.createElement('div', { className: 'text-xl font-bold text-green-400' }, `$${totalEarnings}`)
         ),
 
+        // List
         games.length === 0
-          ? React.createElement('div', { className: 'text-center text-gray-400 py-6' }, 'No games scheduled')
+          ? React.createElement(
+              'div',
+              { className: 'text-center text-gray-400 py-10' },
+              'No games scheduled'
+            )
           : games.map(game =>
               React.createElement(
                 'div',
                 { key: game.id, className: 'bg-gray-800 p-4 rounded-lg mb-3' },
-                React.createElement('div', { className: 'font-semibold' }, game.league),
+
+                React.createElement('div', { className: 'font-semibold text-lg' }, game.league),
+
                 React.createElement(
                   'div',
                   { className: 'text-sm text-gray-400 mb-2' },
                   new Date(game.date).toLocaleDateString() + (game.time ? ` @ ${game.time}` : '')
                 ),
+
+                (game.facility || game.partner)
+                  ? React.createElement(
+                      'div',
+                      { className: 'text-sm text-gray-300 mb-2' },
+                      (game.facility ? `📍 ${game.facility}` : '') +
+                      (game.facility && game.partner ? ' • ' : '') +
+                      (game.partner ? `🤝 ${game.partner}` : '')
+                    )
+                  : null,
+
                 React.createElement(
                   'div',
-                  { className: 'flex justify-between text-sm' },
+                  { className: 'flex justify-between text-sm items-center' },
                   React.createElement('span', null, `${game.numGames} game(s) @ $${game.rate}`),
                   React.createElement('span', { className: 'text-green-400 font-semibold' }, `$${game.total}`)
                 ),
+
                 React.createElement(
                   'button',
-                  { onClick: () => deleteGame(game.id), className: 'text-red-400 text-sm mt-2' },
+                  {
+                    onClick: () => deleteGame(game.id),
+                    className: 'mt-3 inline-flex items-center gap-2 text-red-300 hover:text-red-200 text-sm'
+                  },
+                  React.createElement(Trash2, { size: 16 }),
                   'Delete'
                 )
               )
             ),
 
+        // Floating add button
         React.createElement(
           'button',
-          { onClick: () => setShowForm(true), className: 'fixed bottom-6 right-6 bg-blue-600 p-4 rounded-full shadow-lg' },
+          {
+            onClick: () => setShowForm(true),
+            className:
+              'fixed bottom-6 right-6 bg-blue-600 hover:bg-blue-500 p-4 rounded-full shadow-lg'
+          },
           React.createElement(Plus, { size: 24 })
         ),
 
+        // Modal form
         showForm &&
           React.createElement(
             'div',
             { className: 'fixed inset-0 bg-black bg-opacity-50 flex items-end' },
             React.createElement(
               'div',
-              { className: 'bg-gray-800 w-full p-6 rounded-t-lg' },
-              React.createElement('h2', { className: 'text-xl font-bold mb-4' }, 'Add Game'),
+              { className: 'bg-gray-800 w-full p-6 rounded-t-2xl' },
+
+              React.createElement(
+                'h2',
+                { className: 'text-xl font-bold mb-4' },
+                'Add Game'
+              ),
 
               React.createElement('input', {
                 placeholder: 'League *',
-                className: 'w-full mb-2 p-2 bg-gray-700 rounded',
+                className: inputClass,
                 value: formData.league,
                 onChange: e => setFormData({ ...formData, league: e.target.value })
               }),
 
               React.createElement('input', {
                 type: 'date',
-                className: 'w-full mb-2 p-2 bg-gray-700 rounded',
+                className: inputClass,
                 value: formData.date,
                 onChange: e => setFormData({ ...formData, date: e.target.value })
               }),
 
               React.createElement('input', {
                 type: 'time',
-                className: 'w-full mb-2 p-2 bg-gray-700 rounded',
+                className: inputClass,
                 value: formData.time,
                 onChange: e => setFormData({ ...formData, time: e.target.value })
               }),
 
               React.createElement('input', {
+                placeholder: 'Facility',
+                className: inputClass,
+                value: formData.facility,
+                onChange: e => setFormData({ ...formData, facility: e.target.value })
+              }),
+
+              React.createElement('input', {
+                placeholder: 'Partner',
+                className: inputClass,
+                value: formData.partner,
+                onChange: e => setFormData({ ...formData, partner: e.target.value })
+              }),
+
+              React.createElement('input', {
                 type: 'number',
+                min: 1,
                 placeholder: 'Number of games',
-                className: 'w-full mb-2 p-2 bg-gray-700 rounded',
+                className: inputClass,
                 value: formData.numGames,
                 onChange: e => setFormData({ ...formData, numGames: e.target.value })
               }),
 
               React.createElement('input', {
                 type: 'number',
+                min: 0,
+                step: '0.01',
                 placeholder: 'Rate (per game)',
-                className: 'w-full mb-4 p-2 bg-gray-700 rounded',
+                className: inputClass,
                 value: formData.rate,
                 onChange: e => setFormData({ ...formData, rate: e.target.value })
               }),
 
               React.createElement(
                 'div',
-                { className: 'flex space-x-2' },
-                React.createElement('button', { className: 'flex-1 bg-gray-600 p-2 rounded', onClick: () => setShowForm(false) }, 'Cancel'),
-                React.createElement('button', { className: 'flex-1 bg-blue-600 p-2 rounded', onClick: addGame }, 'Add')
+                { className: 'flex gap-2 mt-2' },
+
+                React.createElement(
+                  'button',
+                  {
+                    className: 'flex-1 bg-gray-600 hover:bg-gray-500 p-2 rounded',
+                    onClick: () => setShowForm(false)
+                  },
+                  'Cancel'
+                ),
+
+                React.createElement(
+                  'button',
+                  {
+                    className: 'flex-1 bg-blue-600 hover:bg-blue-500 p-2 rounded',
+                    onClick: addGame
+                  },
+                  'Add'
+                )
               )
             )
           )
       );
     }
 
-    const root = ReactDOMClient.createRoot(document.getElementById('root'));
-    root.render(React.createElement(RefereeScheduleApp));
+    // Mount the app (legacy render avoids the react-dom-client CDN 404 problem)
+    ReactDOM.render(
+      React.createElement(RefereeScheduleApp),
+      document.getElementById('root')
+    );
   </script>
 </body>
 </html>
