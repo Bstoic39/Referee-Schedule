@@ -24,21 +24,15 @@
 
     // ---------- Date helpers ----------
     function pad2(n) { return String(n).padStart(2, '0'); }
-
     function toLocalDateKey(d) {
       return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
     }
-
-    function monthKeyFromDateKey(dateKey) {
-      return dateKey.slice(0, 7); // YYYY-MM
-    }
+    function monthKeyFromDateKey(dateKey) { return dateKey.slice(0, 7); } // YYYY-MM
 
     function parseGameDateTime(game) {
       const [y, m, d] = game.date.split('-').map(Number);
       let hh = 0, mm = 0;
-      if (game.time && /^\d{2}:\d{2}$/.test(game.time)) {
-        [hh, mm] = game.time.split(':').map(Number);
-      }
+      if (game.time && /^\d{2}:\d{2}$/.test(game.time)) [hh, mm] = game.time.split(':').map(Number);
       return new Date(y, m - 1, d, hh, mm, 0, 0);
     }
 
@@ -52,9 +46,7 @@
       return new Date(y, m - 1, 1).toLocaleDateString(undefined, { year: 'numeric', month: 'long' });
     }
 
-    function startOfMonth(dateObj) {
-      return new Date(dateObj.getFullYear(), dateObj.getMonth(), 1);
-    }
+    function startOfMonth(dateObj) { return new Date(dateObj.getFullYear(), dateObj.getMonth(), 1); }
 
     function getMonthGrid(dateObj) {
       const first = startOfMonth(dateObj);
@@ -72,9 +64,9 @@
     }
 
     // ---------- Storage keys ----------
-    const STORAGE_ACTIVE = 'refGames_v3_active';
-    const STORAGE_ARCHIVE = 'refGames_v3_archive'; // { "YYYY-MM": [games...] }
-    const STORAGE_SETTINGS = 'refGames_v3_settings'; // { notificationsEnabled: boolean }
+    const STORAGE_ACTIVE   = 'refGames_v4_active';
+    const STORAGE_ARCHIVE  = 'refGames_v4_archive';  // { "YYYY-MM": [games...] }
+    const STORAGE_SETTINGS = 'refGames_v4_settings'; // { notificationsEnabled: boolean }
 
     function RefereeScheduleApp() {
       const [view, setView] = useState('list'); // list | calendar | archive
@@ -83,9 +75,10 @@
       const [showForm, setShowForm] = useState(false);
 
       const [calendarCursor, setCalendarCursor] = useState(() => new Date());
-      const [selectedDateKey, setSelectedDateKey] = useState(null); // for day detail sheet
-      const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+      const [selectedDateKey, setSelectedDateKey] = useState(null);
 
+      const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+      const swRegRef = useRef(null);
       const scheduledTimeoutsRef = useRef([]);
 
       const [formData, setFormData] = useState({
@@ -98,7 +91,21 @@
         rate: ''
       });
 
-      // ----- Load -----
+      // ----- Service worker registration (NO caching; notifications only) -----
+      useEffect(() => {
+        (async () => {
+          if (!('serviceWorker' in navigator)) return;
+          try {
+            await navigator.serviceWorker.register('./service-worker.js', { scope: './' });
+            const reg = await navigator.serviceWorker.ready;
+            swRegRef.current = reg;
+          } catch (e) {
+            console.warn('Service worker registration failed:', e);
+          }
+        })();
+      }, []);
+
+      // ----- Load from storage -----
       useEffect(() => {
         try {
           const savedActive = localStorage.getItem(STORAGE_ACTIVE);
@@ -143,22 +150,34 @@
             }
             return next;
           });
-
-          // If the selected date got archived away, refresh it (sheet will show "no games")
-          if (selectedDateKey) {
-            // no-op; derived view handles it
-          }
         };
 
         if (activeGames.length) run();
         const id = setInterval(run, 60 * 1000);
         return () => clearInterval(id);
-      }, [activeGames, selectedDateKey]);
+      }, [activeGames]);
 
-      // ----- Notifications (best-effort, app-open) -----
+      // ----- Notification helpers (via SW showNotification) -----
       function clearScheduledTimeouts() {
         for (const id of scheduledTimeoutsRef.current) clearTimeout(id);
         scheduledTimeoutsRef.current = [];
+      }
+
+      async function showReminderNotification(game) {
+        const reg = swRegRef.current || (await navigator.serviceWorker?.ready?.catch(() => null));
+        if (!reg || !reg.showNotification) return;
+
+        const title = 'Referee game in 2 hours';
+        const when = `${formatNiceDate(game.date)}${game.time ? ` @ ${game.time}` : ''}`;
+        const bodyParts = [game.league, when];
+        if (game.facility) bodyParts.push(game.facility);
+        const body = bodyParts.filter(Boolean).join(' • ');
+
+        await reg.showNotification(title, {
+          body,
+          tag: `game-${game.id}`,
+          renotify: false
+        });
       }
 
       function scheduleNotifications() {
@@ -173,23 +192,16 @@
           const gameDt = parseGameDateTime(g).getTime();
           const fireAt = gameDt - TWO_HOURS;
           if (fireAt <= now) continue;
+
           const delay = fireAt - now;
 
+          // cap very long timeouts; we'll rescan every minute
           const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
           if (delay > SEVEN_DAYS) continue;
 
           const id = setTimeout(() => {
-            try {
-              if (Notification.permission === 'granted') {
-                const title = 'Referee game in 2 hours';
-                const when = `${formatNiceDate(g.date)}${g.time ? ` @ ${g.time}` : ''}`;
-                const bodyParts = [g.league, when];
-                if (g.facility) bodyParts.push(g.facility);
-                const body = bodyParts.filter(Boolean).join(' • ');
-                new Notification(title, { body });
-              }
-            } catch (e) {
-              console.warn('Notification failed', e);
+            if (Notification.permission === 'granted') {
+              showReminderNotification(g).catch(e => console.warn('showNotification failed', e));
             }
           }, delay);
 
@@ -211,18 +223,37 @@
           alert('Notifications are not supported in this browser.');
           return;
         }
-        try {
-          const perm = await Notification.requestPermission();
-          if (perm !== 'granted') {
-            alert('Notification permission was not granted.');
-            setNotificationsEnabled(false);
-            return;
-          }
+
+        // already granted
+        if (Notification.permission === 'granted') {
           setNotificationsEnabled(true);
-          new Notification('Notifications enabled', { body: 'You’ll get reminders (while the app is open) 2 hours before games.' });
-        } catch {
-          alert('Could not enable notifications.');
+          return;
+        }
+
+        let perm;
+        try {
+          perm = await Notification.requestPermission();
+        } catch (e) {
+          alert('Notification permission prompt failed.');
+          return;
+        }
+
+        if (perm !== 'granted') {
+          alert('Notification permission was not granted.');
           setNotificationsEnabled(false);
+          return;
+        }
+
+        setNotificationsEnabled(true);
+
+        // Optional test via SW (non-fatal if it fails)
+        try {
+          const reg = swRegRef.current || (await navigator.serviceWorker.ready);
+          await reg.showNotification('Notifications enabled', {
+            body: 'Reminders will trigger 2 hours before games while the app is open.'
+          });
+        } catch (e) {
+          console.log('Test notification failed (non-fatal):', e);
         }
       }
 
@@ -267,9 +298,7 @@
         setShowForm(false);
       }
 
-      function deleteActive(id) {
-        setActiveGames(prev => prev.filter(g => g.id !== id));
-      }
+      function deleteActive(id) { setActiveGames(prev => prev.filter(g => g.id !== id)); }
 
       function deleteArchived(monthKey, id) {
         setArchiveByMonth(prev => {
@@ -280,9 +309,10 @@
         });
       }
 
-      const totalEarningsActive = useMemo(() => {
-        return activeGames.reduce((sum, g) => sum + (Number(g.total) || 0), 0);
-      }, [activeGames]);
+      // ----- Derived maps -----
+      const totalEarningsActive = useMemo(() => (
+        activeGames.reduce((sum, g) => sum + (Number(g.total) || 0), 0)
+      ), [activeGames]);
 
       const gamesByDateKey = useMemo(() => {
         const map = {};
@@ -290,18 +320,31 @@
           map[g.date] = map[g.date] || [];
           map[g.date].push(g);
         }
-        for (const k of Object.keys(map)) {
-          map[k].sort((a, b) => parseGameDateTime(a) - parseGameDateTime(b));
-        }
+        for (const k of Object.keys(map)) map[k].sort((a, b) => parseGameDateTime(a) - parseGameDateTime(b));
         return map;
       }, [activeGames]);
 
-      const selectedGames = useMemo(() => {
-        if (!selectedDateKey) return [];
-        return (gamesByDateKey[selectedDateKey] || []);
-      }, [gamesByDateKey, selectedDateKey]);
+      const archivedGamesByDateKey = useMemo(() => {
+        const map = {};
+        for (const mk of Object.keys(archiveByMonth)) {
+          for (const g of (archiveByMonth[mk] || [])) {
+            map[g.date] = map[g.date] || [];
+            map[g.date].push(g);
+          }
+        }
+        for (const k of Object.keys(map)) map[k].sort((a, b) => parseGameDateTime(a) - parseGameDateTime(b));
+        return map;
+      }, [archiveByMonth]);
 
-      // ---------- UI ----------
+      const selectedActiveGames = useMemo(() => (
+        selectedDateKey ? (gamesByDateKey[selectedDateKey] || []) : []
+      ), [gamesByDateKey, selectedDateKey]);
+
+      const selectedArchivedGames = useMemo(() => (
+        selectedDateKey ? (archivedGamesByDateKey[selectedDateKey] || []) : []
+      ), [archivedGamesByDateKey, selectedDateKey]);
+
+      // ---------- UI helpers ----------
       const inputClass =
         "w-full mb-2 p-2 bg-gray-700 rounded outline-none focus:ring-2 focus:ring-blue-500";
 
@@ -312,7 +355,6 @@
           {
             onClick: () => {
               setView(id);
-              // close day sheet when leaving calendar
               if (id !== 'calendar') setSelectedDateKey(null);
             },
             className:
@@ -386,7 +428,7 @@
               React.createElement(
                 'div',
                 { className: 'text-[11px] text-gray-400 text-right leading-snug max-w-[220px]' },
-                'Reminders fire 2 hours before games while the app is open.'
+                'SW notifications are more reliable on Android. Still requires app open for timers.'
               )
             )
           ),
@@ -401,6 +443,8 @@
 
       function CalendarDaySheet() {
         if (!selectedDateKey) return null;
+
+        const hasAny = selectedActiveGames.length > 0 || selectedArchivedGames.length > 0;
 
         return React.createElement(
           'div',
@@ -422,14 +466,37 @@
               )
             ),
 
-            selectedGames.length === 0
+            !hasAny
               ? React.createElement('div', { className: 'text-center text-gray-400 py-6' }, 'No games on this day.')
-              : selectedGames.map(g =>
-                  React.createElement(GameCard, {
-                    key: g.id,
-                    game: g,
-                    onDelete: () => deleteActive(g.id)
-                  })
+              : React.createElement(
+                  React.Fragment,
+                  null,
+
+                  selectedActiveGames.length > 0
+                    ? React.createElement(
+                        React.Fragment,
+                        null,
+                        React.createElement('div', { className: 'text-sm text-gray-300 mb-2' }, 'Active'),
+                        selectedActiveGames.map(g =>
+                          React.createElement(GameCard, { key: g.id, game: g, onDelete: () => deleteActive(g.id) })
+                        )
+                      )
+                    : null,
+
+                  selectedArchivedGames.length > 0
+                    ? React.createElement(
+                        React.Fragment,
+                        null,
+                        React.createElement('div', { className: 'text-sm text-gray-300 mt-4 mb-2' }, 'Archived'),
+                        selectedArchivedGames.map(g =>
+                          React.createElement(GameCard, {
+                            key: g.id,
+                            game: g,
+                            onDelete: () => deleteArchived(monthKeyFromDateKey(g.date), g.id)
+                          })
+                        )
+                      )
+                    : null
                 )
           )
         );
@@ -448,7 +515,6 @@
         return React.createElement(
           'div',
           null,
-
           React.createElement(
             'div',
             { className: 'flex items-center justify-between mb-3' },
@@ -456,13 +522,11 @@
             React.createElement('div', { className: 'font-semibold' }, monthLabel),
             React.createElement('button', { className: 'bg-gray-800 hover:bg-gray-700 px-3 py-2 rounded', onClick: nextMonth }, '›')
           ),
-
           React.createElement(
             'div',
             { className: 'grid grid-cols-7 gap-1 mb-1 text-xs text-gray-400' },
             weekDays.map(w => React.createElement('div', { key: w, className: 'text-center py-1' }, w))
           ),
-
           React.createElement(
             'div',
             { className: 'grid grid-cols-7 gap-1' },
@@ -501,14 +565,12 @@
               );
             })
           ),
-
           React.createElement(CalendarDaySheet)
         );
       }
 
       function ArchiveView() {
         const monthKeys = Object.keys(archiveByMonth).sort().reverse();
-
         return React.createElement(
           'div',
           null,
@@ -517,7 +579,6 @@
             : monthKeys.map(mk => {
                 const games = archiveByMonth[mk] || [];
                 const monthTotal = games.reduce((s, g) => s + (Number(g.total) || 0), 0);
-
                 return React.createElement(
                   'div',
                   { key: mk, className: 'mb-6' },
@@ -539,6 +600,7 @@
         );
       }
 
+      // ----- Main render -----
       return React.createElement(
         'div',
         { className: 'min-h-screen p-4 max-w-md mx-auto' },
@@ -564,8 +626,7 @@
             'button',
             {
               onClick: () => setShowForm(true),
-              className:
-                'fixed bottom-6 right-6 bg-blue-600 hover:bg-blue-500 p-4 rounded-full shadow-lg text-2xl leading-none'
+              className: 'fixed bottom-6 right-6 bg-blue-600 hover:bg-blue-500 p-4 rounded-full shadow-lg text-2xl leading-none'
             },
             '+'
           ),
