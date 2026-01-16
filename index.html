@@ -95,4 +95,175 @@
       const deleteGame = (id) => setGames(prev => prev.filter(g => g.id !== id));
 
       const inputClass =
-        "w-full mb-2 p-2
+        "w-full mb-2 p-2 bg-gray-700 rounded outline-none focus:ring-2 focus:ring-blue-500";
+
+      return React.createElement(
+        'div',
+        { className: 'min-h-screen bg-gray-900 text-white p-4 max-w-md mx-auto' },
+
+        React.createElement(
+          'h1',
+          { className: 'text-2xl font-bold mb-6 text-center' },
+          'Referee Schedule'
+        ),
+
+        React.createElement(
+          'div',
+          { className: 'bg-gray-800 p-4 rounded-lg mb-4' },
+          React.createElement('div', { className: 'text-sm text-gray-400' }, 'Total Earnings'),
+          React.createElement('div', { className: 'text-xl font-bold text-green-400' }, `$${totalEarnings}`)
+        ),
+
+        games.length === 0
+          ? React.createElement(
+              'div',
+              { className: 'text-center text-gray-400 py-10' },
+              'No games scheduled'
+            )
+          : games.map(game =>
+              React.createElement(
+                'div',
+                { key: game.id, className: 'bg-gray-800 p-4 rounded-lg mb-3' },
+
+                React.createElement('div', { className: 'font-semibold text-lg' }, game.league),
+
+                React.createElement(
+                  'div',
+                  { className: 'text-sm text-gray-400 mb-2' },
+                  new Date(game.date).toLocaleDateString() + (game.time ? ` @ ${game.time}` : '')
+                ),
+
+                (game.facility || game.partner)
+                  ? React.createElement(
+                      'div',
+                      { className: 'text-sm text-gray-300 mb-2' },
+                      (game.facility ? `📍 ${game.facility}` : '') +
+                      (game.facility && game.partner ? ' • ' : '') +
+                      (game.partner ? `🤝 ${game.partner}` : '')
+                    )
+                  : null,
+
+                React.createElement(
+                  'div',
+                  { className: 'flex justify-between text-sm items-center' },
+                  React.createElement('span', null, `${game.numGames} game(s) @ $${game.rate}`),
+                  React.createElement('span', { className: 'text-green-400 font-semibold' }, `$${game.total}`)
+                ),
+
+                React.createElement(
+                  'button',
+                  {
+                    onClick: () => deleteGame(game.id),
+                    className: 'mt-3 inline-flex items-center gap-2 text-red-300 hover:text-red-200 text-sm'
+                  },
+                  'Delete'
+                )
+              )
+            ),
+
+        React.createElement(
+          'button',
+          {
+            onClick: () => setShowForm(true),
+            className:
+              'fixed bottom-6 right-6 bg-blue-600 hover:bg-blue-500 p-4 rounded-full shadow-lg text-2xl leading-none'
+          },
+          '+'
+        ),
+
+        showForm &&
+          React.createElement(
+            'div',
+            { className: 'fixed inset-0 bg-black bg-opacity-50 flex items-end' },
+            React.createElement(
+              'div',
+              { className: 'bg-gray-800 w-full p-6 rounded-t-2xl' },
+
+              React.createElement('h2', { className: 'text-xl font-bold mb-4' }, 'Add Game'),
+
+              React.createElement('input', {
+                placeholder: 'League *',
+                className: inputClass,
+                value: formData.league,
+                onChange: e => setFormData({ ...formData, league: e.target.value })
+              }),
+
+              React.createElement('input', {
+                type: 'date',
+                className: inputClass,
+                value: formData.date,
+                onChange: e => setFormData({ ...formData, date: e.target.value })
+              }),
+
+              React.createElement('input', {
+                type: 'time',
+                className: inputClass,
+                value: formData.time,
+                onChange: e => setFormData({ ...formData, time: e.target.value })
+              }),
+
+              React.createElement('input', {
+                placeholder: 'Facility',
+                className: inputClass,
+                value: formData.facility,
+                onChange: e => setFormData({ ...formData, facility: e.target.value })
+              }),
+
+              React.createElement('input', {
+                placeholder: 'Partner',
+                className: inputClass,
+                value: formData.partner,
+                onChange: e => setFormData({ ...formData, partner: e.target.value })
+              }),
+
+              React.createElement('input', {
+                type: 'number',
+                min: 1,
+                placeholder: 'Number of games',
+                className: inputClass,
+                value: formData.numGames,
+                onChange: e => setFormData({ ...formData, numGames: e.target.value })
+              }),
+
+              React.createElement('input', {
+                type: 'number',
+                min: 0,
+                step: '0.01',
+                placeholder: 'Rate (per game)',
+                className: inputClass,
+                value: formData.rate,
+                onChange: e => setFormData({ ...formData, rate: e.target.value })
+              }),
+
+              React.createElement(
+                'div',
+                { className: 'flex gap-2 mt-2' },
+                React.createElement(
+                  'button',
+                  {
+                    className: 'flex-1 bg-gray-600 hover:bg-gray-500 p-2 rounded',
+                    onClick: () => setShowForm(false)
+                  },
+                  'Cancel'
+                ),
+                React.createElement(
+                  'button',
+                  {
+                    className: 'flex-1 bg-blue-600 hover:bg-blue-500 p-2 rounded',
+                    onClick: addGame
+                  },
+                  'Add'
+                )
+              )
+            )
+          )
+      );
+    }
+
+    ReactDOM.render(
+      React.createElement(RefereeScheduleApp),
+      document.getElementById('root')
+    );
+  </script>
+</body>
+</html>
