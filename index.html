@@ -3,44 +3,36 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#1f2937" />
-  <title>Referee Schedule Tracker</title>
+  <meta name="theme-color" content="#111827" />
+  <title>Referee Schedule</title>
 
-  <!-- Correct filenames -->
+  <!-- Correct filenames from your repo -->
   <link rel="manifest" href="site.webmanifest" />
   <link rel="apple-touch-icon" href="apple-touch-icon.png" />
   <link rel="icon" href="favicon.ico" />
 
-  <!-- Tailwind -->
+  <!-- Tailwind CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 
 <body class="bg-gray-900 text-white">
   <div id="root"></div>
 
-  <!-- React 18 -->
+  <!-- React 18 (UMD) -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.client.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom-client.production.min.js"></script>
 
-  <!-- Icons -->
+  <!-- Lucide Icons (UMD) -->
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
 
   <script>
     const { useState, useEffect } = React;
-    const {
-      Plus, Trash2, ChevronLeft, ChevronRight,
-      Bell, BellOff, Archive, Home
-    } = lucide;
+    const { Plus } = lucide;
 
     function RefereeScheduleApp() {
       const [games, setGames] = useState([]);
-      const [archivedMonths, setArchivedMonths] = useState([]);
       const [showForm, setShowForm] = useState(false);
-      const [viewMode, setViewMode] = useState('list');
-      const [currentDate, setCurrentDate] = useState(new Date());
-      const [notificationsEnabled, setNotificationsEnabled] = useState(false);
-      const [showArchive, setShowArchive] = useState(false);
 
       const [formData, setFormData] = useState({
         league: '',
@@ -54,35 +46,28 @@
 
       useEffect(() => {
         const saved = localStorage.getItem('refGames');
-        const savedArchive = localStorage.getItem('refArchive');
         if (saved) setGames(JSON.parse(saved));
-        if (savedArchive) setArchivedMonths(JSON.parse(savedArchive));
       }, []);
 
       useEffect(() => {
         localStorage.setItem('refGames', JSON.stringify(games));
       }, [games]);
 
-      useEffect(() => {
-        localStorage.setItem('refArchive', JSON.stringify(archivedMonths));
-      }, [archivedMonths]);
-
       const addGame = () => {
         if (!formData.league || !formData.date) return;
+
+        const numGames = Number(formData.numGames) || 1;
+        const rate = Number(formData.rate) || 0;
 
         const newGame = {
           id: Date.now(),
           ...formData,
-          numGames: Number(formData.numGames) || 1,
-          rate: Number(formData.rate) || 0,
-          total:
-            (Number(formData.numGames) || 1) *
-            (Number(formData.rate) || 0)
+          numGames,
+          rate,
+          total: numGames * rate
         };
 
-        setGames([...games, newGame].sort(
-          (a, b) => new Date(a.date) - new Date(b.date)
-        ));
+        setGames([...games, newGame].sort((a, b) => new Date(a.date) - new Date(b.date)));
 
         setFormData({
           league: '',
@@ -97,11 +82,9 @@
         setShowForm(false);
       };
 
-      const deleteGame = (id) => {
-        setGames(games.filter(g => g.id !== id));
-      };
+      const deleteGame = (id) => setGames(games.filter(g => g.id !== id));
 
-      const totalEarnings = games.reduce((s, g) => s + g.total, 0);
+      const totalEarnings = games.reduce((s, g) => s + (Number(g.total) || 0), 0);
 
       return React.createElement(
         'div',
@@ -134,8 +117,7 @@
                 React.createElement(
                   'div',
                   { className: 'text-sm text-gray-400 mb-2' },
-                  new Date(game.date).toLocaleDateString() +
-                    (game.time ? ` @ ${game.time}` : '')
+                  new Date(game.date).toLocaleDateString() + (game.time ? ` @ ${game.time}` : '')
                 ),
                 React.createElement(
                   'div',
@@ -171,25 +153,44 @@
               'div',
               { className: 'bg-gray-800 w-full p-6 rounded-t-lg' },
               React.createElement('h2', { className: 'text-xl font-bold mb-4' }, 'Add Game'),
+
               React.createElement('input', {
                 placeholder: 'League *',
                 className: 'w-full mb-2 p-2 bg-gray-700 rounded',
                 value: formData.league,
                 onChange: e => setFormData({ ...formData, league: e.target.value })
               }),
+
               React.createElement('input', {
                 type: 'date',
                 className: 'w-full mb-2 p-2 bg-gray-700 rounded',
                 value: formData.date,
                 onChange: e => setFormData({ ...formData, date: e.target.value })
               }),
+
+              React.createElement('input', {
+                type: 'time',
+                className: 'w-full mb-2 p-2 bg-gray-700 rounded',
+                value: formData.time,
+                onChange: e => setFormData({ ...formData, time: e.target.value })
+              }),
+
               React.createElement('input', {
                 type: 'number',
-                placeholder: 'Rate',
+                placeholder: 'Number of games',
+                className: 'w-full mb-2 p-2 bg-gray-700 rounded',
+                value: formData.numGames,
+                onChange: e => setFormData({ ...formData, numGames: e.target.value })
+              }),
+
+              React.createElement('input', {
+                type: 'number',
+                placeholder: 'Rate (per game)',
                 className: 'w-full mb-4 p-2 bg-gray-700 rounded',
                 value: formData.rate,
                 onChange: e => setFormData({ ...formData, rate: e.target.value })
               }),
+
               React.createElement(
                 'div',
                 { className: 'flex space-x-2' },
@@ -215,7 +216,8 @@
       );
     }
 
-    const root = ReactDOM.createRoot(document.getElementById('root'));
+    // React 18: createRoot is on ReactDOMClient in UMD builds
+    const root = ReactDOMClient.createRoot(document.getElementById('root'));
     root.render(React.createElement(RefereeScheduleApp));
   </script>
 </body>
