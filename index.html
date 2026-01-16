@@ -34,3 +34,189 @@
     } = lucide;
 
     function RefereeScheduleApp() {
+      const [games, setGames] = useState([]);
+      const [archivedMonths, setArchivedMonths] = useState([]);
+      const [showForm, setShowForm] = useState(false);
+      const [viewMode, setViewMode] = useState('list');
+      const [currentDate, setCurrentDate] = useState(new Date());
+      const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+      const [showArchive, setShowArchive] = useState(false);
+
+      const [formData, setFormData] = useState({
+        league: '',
+        date: '',
+        time: '',
+        facility: '',
+        partner: '',
+        numGames: 1,
+        rate: ''
+      });
+
+      useEffect(() => {
+        const saved = localStorage.getItem('refGames');
+        const savedArchive = localStorage.getItem('refArchive');
+        if (saved) setGames(JSON.parse(saved));
+        if (savedArchive) setArchivedMonths(JSON.parse(savedArchive));
+      }, []);
+
+      useEffect(() => {
+        localStorage.setItem('refGames', JSON.stringify(games));
+      }, [games]);
+
+      useEffect(() => {
+        localStorage.setItem('refArchive', JSON.stringify(archivedMonths));
+      }, [archivedMonths]);
+
+      const addGame = () => {
+        if (!formData.league || !formData.date) return;
+
+        const newGame = {
+          id: Date.now(),
+          ...formData,
+          numGames: Number(formData.numGames) || 1,
+          rate: Number(formData.rate) || 0,
+          total:
+            (Number(formData.numGames) || 1) *
+            (Number(formData.rate) || 0)
+        };
+
+        setGames([...games, newGame].sort(
+          (a, b) => new Date(a.date) - new Date(b.date)
+        ));
+
+        setFormData({
+          league: '',
+          date: '',
+          time: '',
+          facility: '',
+          partner: '',
+          numGames: 1,
+          rate: ''
+        });
+
+        setShowForm(false);
+      };
+
+      const deleteGame = (id) => {
+        setGames(games.filter(g => g.id !== id));
+      };
+
+      const totalEarnings = games.reduce((s, g) => s + g.total, 0);
+
+      return React.createElement(
+        'div',
+        { className: 'min-h-screen bg-gray-900 text-white p-4 max-w-md mx-auto' },
+
+        React.createElement(
+          'h1',
+          { className: 'text-2xl font-bold mb-6 text-center' },
+          'Referee Schedule'
+        ),
+
+        React.createElement(
+          'div',
+          { className: 'bg-gray-800 p-4 rounded-lg mb-4' },
+          React.createElement('div', { className: 'text-sm text-gray-400' }, 'Total Earnings'),
+          React.createElement('div', { className: 'text-xl font-bold text-green-400' }, `$${totalEarnings}`)
+        ),
+
+        games.length === 0
+          ? React.createElement(
+              'div',
+              { className: 'text-center text-gray-400 py-6' },
+              'No games scheduled'
+            )
+          : games.map(game =>
+              React.createElement(
+                'div',
+                { key: game.id, className: 'bg-gray-800 p-4 rounded-lg mb-3' },
+                React.createElement('div', { className: 'font-semibold' }, game.league),
+                React.createElement(
+                  'div',
+                  { className: 'text-sm text-gray-400 mb-2' },
+                  new Date(game.date).toLocaleDateString() +
+                    (game.time ? ` @ ${game.time}` : '')
+                ),
+                React.createElement(
+                  'div',
+                  { className: 'flex justify-between text-sm' },
+                  React.createElement('span', null, `${game.numGames} game(s) @ $${game.rate}`),
+                  React.createElement('span', { className: 'text-green-400 font-semibold' }, `$${game.total}`)
+                ),
+                React.createElement(
+                  'button',
+                  {
+                    onClick: () => deleteGame(game.id),
+                    className: 'text-red-400 text-sm mt-2'
+                  },
+                  'Delete'
+                )
+              )
+            ),
+
+        React.createElement(
+          'button',
+          {
+            onClick: () => setShowForm(true),
+            className: 'fixed bottom-6 right-6 bg-blue-600 p-4 rounded-full shadow-lg'
+          },
+          React.createElement(Plus, { size: 24 })
+        ),
+
+        showForm &&
+          React.createElement(
+            'div',
+            { className: 'fixed inset-0 bg-black bg-opacity-50 flex items-end' },
+            React.createElement(
+              'div',
+              { className: 'bg-gray-800 w-full p-6 rounded-t-lg' },
+              React.createElement('h2', { className: 'text-xl font-bold mb-4' }, 'Add Game'),
+              React.createElement('input', {
+                placeholder: 'League *',
+                className: 'w-full mb-2 p-2 bg-gray-700 rounded',
+                value: formData.league,
+                onChange: e => setFormData({ ...formData, league: e.target.value })
+              }),
+              React.createElement('input', {
+                type: 'date',
+                className: 'w-full mb-2 p-2 bg-gray-700 rounded',
+                value: formData.date,
+                onChange: e => setFormData({ ...formData, date: e.target.value })
+              }),
+              React.createElement('input', {
+                type: 'number',
+                placeholder: 'Rate',
+                className: 'w-full mb-4 p-2 bg-gray-700 rounded',
+                value: formData.rate,
+                onChange: e => setFormData({ ...formData, rate: e.target.value })
+              }),
+              React.createElement(
+                'div',
+                { className: 'flex space-x-2' },
+                React.createElement(
+                  'button',
+                  {
+                    className: 'flex-1 bg-gray-600 p-2 rounded',
+                    onClick: () => setShowForm(false)
+                  },
+                  'Cancel'
+                ),
+                React.createElement(
+                  'button',
+                  {
+                    className: 'flex-1 bg-blue-600 p-2 rounded',
+                    onClick: addGame
+                  },
+                  'Add'
+                )
+              )
+            )
+          )
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(React.createElement(RefereeScheduleApp));
+  </script>
+</body>
+</html>
