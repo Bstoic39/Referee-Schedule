@@ -21,7 +21,7 @@
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 
   <script>
-    const { useEffect, useMemo, useState } = React;
+    const { useEffect, useMemo, useRef, useState } = React;
 
     // ---------- Date helpers ----------
     function pad2(n) { return String(n).padStart(2, '0'); }
@@ -134,6 +134,44 @@
       );
     }
 
+    // ---------- Long-press hook ----------
+    function useLongPress({ onLongPress, onClick, ms = 500 }) {
+      const timerRef = useRef(null);
+      const longPressedRef = useRef(false);
+
+      const start = (e) => {
+        longPressedRef.current = false;
+        if (timerRef.current) clearTimeout(timerRef.current);
+        timerRef.current = setTimeout(() => {
+          longPressedRef.current = true;
+          onLongPress && onLongPress(e);
+        }, ms);
+      };
+
+      const clear = (e) => {
+        if (timerRef.current) {
+          clearTimeout(timerRef.current);
+          timerRef.current = null;
+        }
+      };
+
+      const end = (e) => {
+        clear(e);
+        if (!longPressedRef.current) {
+          onClick && onClick(e);
+        }
+      };
+
+      return {
+        onMouseDown: start,
+        onMouseUp: end,
+        onMouseLeave: clear,
+        onTouchStart: start,
+        onTouchEnd: end,
+        onTouchCancel: clear
+      };
+    }
+
     function RefereeScheduleApp() {
       const [view, setView] = useState('list'); // list | calendar | archive
       const [activeGames, setActiveGames] = useState([]);
@@ -175,6 +213,13 @@
       useEffect(() => { try { localStorage.setItem(STORAGE_ACTIVE, JSON.stringify(activeGames)); } catch {} }, [activeGames]);
       useEffect(() => { try { localStorage.setItem(STORAGE_ARCHIVE, JSON.stringify(archiveByMonth)); } catch {} }, [archiveByMonth]);
 
+      // Jump calendar to today when switching to calendar tab
+      useEffect(() => {
+        if (view === 'calendar') {
+          setCalendarCursor(new Date());
+        }
+      }, [view]);
+
       // ----- CRUD helpers -----
       function computeTotal(numGames, rate) {
         const ng = Number(numGames) || 0;
@@ -182,11 +227,11 @@
         return ng * r;
       }
 
-      function openAddForm() {
+      function openAddForm(prefillDateKey) {
         setEditTarget(null);
         setFormData({
           league: '',
-          date: '',
+          date: prefillDateKey || '',
           time: '',
           facility: '',
           partner: '',
@@ -598,28 +643,57 @@
             cells.map((cell, idx) => {
               const dk = toLocalDateKey(cell.date);
               const dayNum = cell.date.getDate();
+
               const hasActive = (gamesByDateKey[dk] || []).length > 0;
+              const hasArchived = (archivedGamesByDateKey[dk] || []).length > 0;
               const isToday = dk === todayKey;
+
+              const pressBind = useLongPress({
+                onLongPress: () => openAddForm(dk),
+                onClick: () => setSelectedDateKey(dk),
+                ms: 500
+              });
+
+              const baseClass = isToday
+                ? 'bg-white text-gray-900'
+                : (cell.inMonth ? 'bg-gray-800 text-white' : 'bg-gray-950 text-gray-400');
+
+              // Distinguish unpaid (active) vs paid (archived) days:
+              // - Active: green whistle
+              // - Archived only: gray whistle
+              const whistle =
+                hasActive
+                  ? React.createElement(WhistleIcon, { className: 'w-4 h-4' })
+                  : (hasArchived ? React.createElement(WhistleIcon, { className: 'w-4 h-4' }) : null);
+
+              const whistleColor =
+                hasActive ? (isToday ? 'text-blue-600' : 'text-green-400') :
+                (hasArchived ? (isToday ? 'text-blue-600' : 'text-gray-400') : '');
 
               return React.createElement(
                 'button',
-                {
-                  key: idx,
-                  onClick: () => setSelectedDateKey(dk),
-                  className:
-                    (cell.inMonth ? 'bg-gray-800' : 'bg-gray-950') +
-                    ' rounded p-2 min-h-[72px] text-left border ' +
-                    (isToday ? 'border-blue-500' : 'border-transparent') +
-                    ' hover:bg-gray-700 active:scale-[0.99] transition'
-                },
+                Object.assign(
+                  {
+                    key: idx,
+                    className:
+                      baseClass +
+                      ' rounded p-2 min-h-[72px] text-left border border-transparent ' +
+                      ' hover:bg-gray-700 active:scale-[0.99] transition select-none'
+                  },
+                  pressBind
+                ),
                 React.createElement(
                   'div',
-                  { className: (cell.inMonth ? 'text-gray-200' : 'text-gray-600') + ' text-xs mb-1 flex justify-between' },
+                  {
+                    className:
+                      (isToday
+                        ? 'text-blue-600 font-semibold'
+                        : (cell.inMonth ? 'text-gray-200' : 'text-gray-600')
+                      ) + ' text-xs mb-1 flex justify-between'
+                  },
                   React.createElement('span', null, dayNum),
-                  hasActive
-                    ? React.createElement('span', { className: 'text-green-400 flex items-center justify-center' },
-                        React.createElement(WhistleIcon, { className: 'w-4 h-4' })
-                      )
+                  whistle
+                    ? React.createElement('span', { className: whistleColor + ' flex items-center justify-center' }, whistle)
                     : null
                 )
               );
@@ -689,7 +763,7 @@
           React.createElement(
             'button',
             {
-              onClick: openAddForm,
+              onClick: () => openAddForm(''),
               className:
                 'fixed bottom-6 left-1/2 -translate-x-1/2 bg-blue-600 hover:bg-blue-500 px-6 py-3 rounded-full shadow-lg font-semibold flex items-center gap-2'
             },
@@ -774,6 +848,14 @@
                   { className: 'flex-1 bg-blue-600 hover:bg-blue-500 p-2 rounded', onClick: saveForm },
                   editTarget ? 'Save' : 'Add'
                 )
+              ),
+
+              React.createElement(
+                'div',
+                { className: 'mt-3 text-xs text-gray-400 text-center' },
+                view === 'calendar'
+                  ? 'Tip: Long-press a day to add a game on that date.'
+                  : ''
               )
             )
           )
