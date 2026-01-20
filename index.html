@@ -64,9 +64,36 @@
       return cells;
     }
 
-    // ---------- Storage keys ----------
-    const STORAGE_ACTIVE  = 'refGames_v7_active';
-    const STORAGE_ARCHIVE = 'refGames_v7_archive'; // { "YYYY-MM": [games...] }
+    // ---------- Storage keys (STABLE) ----------
+    const STORAGE_ACTIVE  = 'refGames_active';
+    const STORAGE_ARCHIVE = 'refGames_archive'; // { "YYYY-MM": [games...] }
+
+    // Migration: copy data from older keys if new keys are empty.
+    function migrateStorageIfNeeded() {
+      try {
+        const hasNewActive = localStorage.getItem(STORAGE_ACTIVE);
+        const hasNewArchive = localStorage.getItem(STORAGE_ARCHIVE);
+        if (hasNewActive || hasNewArchive) return;
+
+        const legacyActiveKeys = [
+          'refGames_v7_active','refGames_v6_active','refGames_v5_active','refGames_v4_active','refGames_v3_active','refGames'
+        ];
+        const legacyArchiveKeys = [
+          'refGames_v7_archive','refGames_v6_archive','refGames_v5_archive','refGames_v4_archive','refGames_v3_archive','refArchive'
+        ];
+
+        for (const k of legacyActiveKeys) {
+          const v = localStorage.getItem(k);
+          if (v) { localStorage.setItem(STORAGE_ACTIVE, v); break; }
+        }
+        for (const k of legacyArchiveKeys) {
+          const v = localStorage.getItem(k);
+          if (v) { localStorage.setItem(STORAGE_ARCHIVE, v); break; }
+        }
+      } catch (e) {
+        console.warn('Storage migration failed', e);
+      }
+    }
 
     // ---------- Icons (inline SVG) ----------
     function TrashIcon({ className = '' }) {
@@ -116,7 +143,7 @@
       const [calendarCursor, setCalendarCursor] = useState(() => new Date());
       const [selectedDateKey, setSelectedDateKey] = useState(null);
 
-      // editMode: null | { scope: 'active'|'archived', monthKey?: 'YYYY-MM', gameId: number }
+      // editTarget: null | { scope: 'active'|'archived', monthKey?: 'YYYY-MM', gameId: number }
       const [editTarget, setEditTarget] = useState(null);
 
       const [formData, setFormData] = useState({
@@ -129,11 +156,14 @@
         rate: ''
       });
 
-      // ----- Load from storage -----
+      // ----- Load from storage (with migration) -----
       useEffect(() => {
         try {
+          migrateStorageIfNeeded();
+
           const savedActive = localStorage.getItem(STORAGE_ACTIVE);
           const savedArchive = localStorage.getItem(STORAGE_ARCHIVE);
+
           if (savedActive) setActiveGames(JSON.parse(savedActive));
           if (savedArchive) setArchiveByMonth(JSON.parse(savedArchive));
         } catch (e) {
@@ -675,9 +705,7 @@
               'div',
               { className: 'bg-gray-800 w-full p-6 rounded-t-2xl' },
 
-              React.createElement('h2', { className: 'text-xl font-bold mb-4' },
-                editTarget ? 'Edit Game' : 'Add Game'
-              ),
+              React.createElement('h2', { className: 'text-xl font-bold mb-4' }, editTarget ? 'Edit Game' : 'Add Game'),
 
               React.createElement('input', {
                 placeholder: 'League *',
@@ -738,18 +766,12 @@
                 { className: 'flex gap-2 mt-2' },
                 React.createElement(
                   'button',
-                  {
-                    className: 'flex-1 bg-gray-600 hover:bg-gray-500 p-2 rounded',
-                    onClick: () => setShowForm(false)
-                  },
+                  { className: 'flex-1 bg-gray-600 hover:bg-gray-500 p-2 rounded', onClick: () => setShowForm(false) },
                   'Cancel'
                 ),
                 React.createElement(
                   'button',
-                  {
-                    className: 'flex-1 bg-blue-600 hover:bg-blue-500 p-2 rounded',
-                    onClick: saveForm
-                  },
+                  { className: 'flex-1 bg-blue-600 hover:bg-blue-500 p-2 rounded', onClick: saveForm },
                   editTarget ? 'Save' : 'Add'
                 )
               )
