@@ -65,22 +65,14 @@
     }
 
     // ---------- Storage keys ----------
-    const STORAGE_ACTIVE  = 'refGames_v6_active';
-    const STORAGE_ARCHIVE = 'refGames_v6_archive'; // { "YYYY-MM": [games...] }
+    const STORAGE_ACTIVE  = 'refGames_v7_active';
+    const STORAGE_ARCHIVE = 'refGames_v7_archive'; // { "YYYY-MM": [games...] }
 
     // ---------- Icons (inline SVG) ----------
     function TrashIcon({ className = '' }) {
       return React.createElement(
         'svg',
-        {
-          viewBox: '0 0 24 24',
-          fill: 'none',
-          stroke: 'currentColor',
-          strokeWidth: 2,
-          strokeLinecap: 'round',
-          strokeLinejoin: 'round',
-          className
-        },
+        { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', className },
         React.createElement('polyline', { points: '3 6 5 6 21 6' }),
         React.createElement('path', { d: 'M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6' }),
         React.createElement('path', { d: 'M10 11v6' }),
@@ -92,17 +84,26 @@
     function WhistleIcon({ className = '' }) {
       return React.createElement(
         'svg',
-        {
-          viewBox: '0 0 24 24',
-          fill: 'none',
-          stroke: 'currentColor',
-          strokeWidth: 2,
-          strokeLinecap: 'round',
-          strokeLinejoin: 'round',
-          className
-        },
+        { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', className },
         React.createElement('path', { d: 'M3 12h11a4 4 0 1 1 0 8H9a6 6 0 0 1-6-6z' }),
         React.createElement('circle', { cx: 19, cy: 16, r: 2 })
+      );
+    }
+
+    function PencilIcon({ className = '' }) {
+      return React.createElement(
+        'svg',
+        { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', className },
+        React.createElement('path', { d: 'M12 20h9' }),
+        React.createElement('path', { d: 'M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z' })
+      );
+    }
+
+    function CheckIcon({ className = '' }) {
+      return React.createElement(
+        'svg',
+        { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', className },
+        React.createElement('path', { d: 'M20 6 9 17l-5-5' })
       );
     }
 
@@ -114,6 +115,9 @@
 
       const [calendarCursor, setCalendarCursor] = useState(() => new Date());
       const [selectedDateKey, setSelectedDateKey] = useState(null);
+
+      // editMode: null | { scope: 'active'|'archived', monthKey?: 'YYYY-MM', gameId: number }
+      const [editTarget, setEditTarget] = useState(null);
 
       const [formData, setFormData] = useState({
         league: '',
@@ -141,59 +145,15 @@
       useEffect(() => { try { localStorage.setItem(STORAGE_ACTIVE, JSON.stringify(activeGames)); } catch {} }, [activeGames]);
       useEffect(() => { try { localStorage.setItem(STORAGE_ARCHIVE, JSON.stringify(archiveByMonth)); } catch {} }, [archiveByMonth]);
 
-      // ----- Auto-archive past games -----
-      useEffect(() => {
-        const run = () => {
-          const now = new Date();
-          const toArchive = [];
-          const stillActive = [];
+      // ----- CRUD helpers -----
+      function computeTotal(numGames, rate) {
+        const ng = Number(numGames) || 0;
+        const r = Number(rate) || 0;
+        return ng * r;
+      }
 
-          for (const g of activeGames) {
-            const dt = parseGameDateTime(g);
-            if (dt.getTime() < now.getTime()) toArchive.push(g);
-            else stillActive.push(g);
-          }
-          if (toArchive.length === 0) return;
-
-          setActiveGames(stillActive);
-
-          setArchiveByMonth(prev => {
-            const next = { ...prev };
-            for (const g of toArchive) {
-              const mk = monthKeyFromDateKey(g.date);
-              next[mk] = (next[mk] || []).concat([g]);
-              next[mk].sort((a, b) => parseGameDateTime(a) - parseGameDateTime(b));
-            }
-            return next;
-          });
-        };
-
-        if (activeGames.length) run();
-        const id = setInterval(run, 60 * 1000);
-        return () => clearInterval(id);
-      }, [activeGames]);
-
-      // ----- CRUD -----
-      function addGame() {
-        if (!formData.league || !formData.date) return;
-
-        const numGames = Number(formData.numGames) || 1;
-        const rate = Number(formData.rate) || 0;
-
-        const newGame = {
-          id: Date.now(),
-          league: formData.league.trim(),
-          date: formData.date,
-          time: formData.time,
-          facility: formData.facility.trim(),
-          partner: formData.partner.trim(),
-          numGames,
-          rate,
-          total: numGames * rate
-        };
-
-        setActiveGames(prev => [...prev, newGame].sort((a, b) => parseGameDateTime(a) - parseGameDateTime(b)));
-
+      function openAddForm() {
+        setEditTarget(null);
         setFormData({
           league: '',
           date: '',
@@ -203,7 +163,98 @@
           numGames: 1,
           rate: ''
         });
-        setShowForm(false);
+        setShowForm(true);
+      }
+
+      function openEditActive(game) {
+        setEditTarget({ scope: 'active', gameId: game.id });
+        setFormData({
+          league: game.league || '',
+          date: game.date || '',
+          time: game.time || '',
+          facility: game.facility || '',
+          partner: game.partner || '',
+          numGames: game.numGames ?? 1,
+          rate: game.rate ?? ''
+        });
+        setShowForm(true);
+      }
+
+      function openEditArchived(monthKey, game) {
+        setEditTarget({ scope: 'archived', monthKey, gameId: game.id });
+        setFormData({
+          league: game.league || '',
+          date: game.date || '',
+          time: game.time || '',
+          facility: game.facility || '',
+          partner: game.partner || '',
+          numGames: game.numGames ?? 1,
+          rate: game.rate ?? ''
+        });
+        setShowForm(true);
+      }
+
+      function saveForm() {
+        if (!formData.league || !formData.date) return;
+
+        const next = {
+          league: String(formData.league || '').trim(),
+          date: formData.date,
+          time: formData.time,
+          facility: String(formData.facility || '').trim(),
+          partner: String(formData.partner || '').trim(),
+          numGames: Number(formData.numGames) || 1,
+          rate: Number(formData.rate) || 0
+        };
+
+        next.total = computeTotal(next.numGames, next.rate);
+
+        // ADD
+        if (!editTarget) {
+          const newGame = { id: Date.now(), ...next };
+          setActiveGames(prev => [...prev, newGame].sort((a, b) => parseGameDateTime(a) - parseGameDateTime(b)));
+          setShowForm(false);
+          return;
+        }
+
+        // EDIT ACTIVE
+        if (editTarget.scope === 'active') {
+          const id = editTarget.gameId;
+          setActiveGames(prev => prev
+            .map(g => g.id === id ? { ...g, ...next } : g)
+            .sort((a, b) => parseGameDateTime(a) - parseGameDateTime(b))
+          );
+          setShowForm(false);
+          return;
+        }
+
+        // EDIT ARCHIVED (may move month if date changed)
+        if (editTarget.scope === 'archived') {
+          const oldMonthKey = editTarget.monthKey;
+          const id = editTarget.gameId;
+          const newMonthKey = monthKeyFromDateKey(next.date);
+
+          setArchiveByMonth(prev => {
+            const copy = { ...prev };
+            const oldArr = (copy[oldMonthKey] || []).map(g => g);
+            const idx = oldArr.findIndex(g => g.id === id);
+            if (idx === -1) return prev;
+
+            const updatedGame = { ...oldArr[idx], ...next };
+            oldArr.splice(idx, 1);
+
+            if (oldArr.length) copy[oldMonthKey] = oldArr;
+            else delete copy[oldMonthKey];
+
+            copy[newMonthKey] = (copy[newMonthKey] || []).concat([updatedGame]);
+            copy[newMonthKey].sort((a, b) => parseGameDateTime(a) - parseGameDateTime(b));
+
+            return copy;
+          });
+
+          setShowForm(false);
+          return;
+        }
       }
 
       function deleteActive(id) { setActiveGames(prev => prev.filter(g => g.id !== id)); }
@@ -217,10 +268,38 @@
         });
       }
 
+      function markPaid(gameId) {
+        // Move from active → archive month bucket
+        setActiveGames(prevActive => {
+          const game = prevActive.find(g => g.id === gameId);
+          if (!game) return prevActive;
+
+          const remaining = prevActive.filter(g => g.id !== gameId);
+
+          setArchiveByMonth(prevArchive => {
+            const mk = monthKeyFromDateKey(game.date);
+            const next = { ...prevArchive };
+            next[mk] = (next[mk] || []).concat([{ ...game }]);
+            next[mk].sort((a, b) => parseGameDateTime(a) - parseGameDateTime(b));
+            return next;
+          });
+
+          return remaining;
+        });
+      }
+
       // ----- Derived maps -----
-      const totalEarningsActive = useMemo(() => (
+      const totalOwed = useMemo(() => (
         activeGames.reduce((sum, g) => sum + (Number(g.total) || 0), 0)
       ), [activeGames]);
+
+      const totalPaid = useMemo(() => {
+        let sum = 0;
+        for (const mk of Object.keys(archiveByMonth)) {
+          for (const g of (archiveByMonth[mk] || [])) sum += (Number(g.total) || 0);
+        }
+        return sum;
+      }, [archiveByMonth]);
 
       const gamesByDateKey = useMemo(() => {
         const map = {};
@@ -273,17 +352,27 @@
         );
       }
 
-      function GameCard({ game, onDelete }) {
+      function ActionIconButton({ title, className, onClick, icon }) {
+        return React.createElement(
+          'button',
+          { onClick, title, className: (className || '') + ' p-1 rounded active:scale-95 transition' },
+          icon
+        );
+      }
+
+      function GameCard({ game, onEdit, onDelete, onMarkPaid, showMarkPaid }) {
         return React.createElement(
           'div',
           { className: 'bg-gray-800 p-4 rounded-lg mb-3' },
+
           React.createElement(
             'div',
-            { className: 'flex justify-between items-start gap-2' },
+            { className: 'flex justify-between items-start gap-3' },
+
             React.createElement(
               'div',
-              null,
-              React.createElement('div', { className: 'font-semibold text-lg' }, game.league),
+              { className: 'min-w-0' },
+              React.createElement('div', { className: 'font-semibold text-lg truncate' }, game.league),
               React.createElement(
                 'div',
                 { className: 'text-sm text-gray-400 mb-1' },
@@ -299,16 +388,40 @@
                   )
                 : null
             ),
+
             React.createElement(
-              'button',
-              {
-                onClick: onDelete,
-                title: 'Delete',
-                className: 'text-red-400 hover:text-red-300 active:scale-95 transition p-1 rounded'
-              },
-              React.createElement(TrashIcon, { className: 'w-5 h-5' })
+              'div',
+              { className: 'flex items-center gap-2 shrink-0' },
+
+              onEdit
+                ? React.createElement(ActionIconButton, {
+                    title: 'Edit',
+                    className: 'text-gray-300 hover:text-white',
+                    onClick: onEdit,
+                    icon: React.createElement(PencilIcon, { className: 'w-5 h-5' })
+                  })
+                : null,
+
+              showMarkPaid && onMarkPaid
+                ? React.createElement(ActionIconButton, {
+                    title: 'Mark Paid',
+                    className: 'text-green-400 hover:text-green-300',
+                    onClick: onMarkPaid,
+                    icon: React.createElement(CheckIcon, { className: 'w-5 h-5' })
+                  })
+                : null,
+
+              onDelete
+                ? React.createElement(ActionIconButton, {
+                    title: 'Delete',
+                    className: 'text-red-400 hover:text-red-300',
+                    onClick: onDelete,
+                    icon: React.createElement(TrashIcon, { className: 'w-5 h-5' })
+                  })
+                : null
             )
           ),
+
           React.createElement(
             'div',
             { className: 'flex justify-between text-sm items-center mt-2' },
@@ -324,15 +437,32 @@
           null,
           React.createElement(
             'div',
-            { className: 'bg-gray-800 p-4 rounded-lg mb-4' },
-            React.createElement('div', { className: 'text-sm text-gray-400' }, 'Active Earnings'),
-            React.createElement('div', { className: 'text-xl font-bold text-green-400' }, `$${totalEarningsActive}`)
+            { className: 'grid grid-cols-2 gap-3 mb-4' },
+            React.createElement(
+              'div',
+              { className: 'bg-gray-800 p-4 rounded-lg' },
+              React.createElement('div', { className: 'text-sm text-gray-400' }, 'Owed (Active)'),
+              React.createElement('div', { className: 'text-xl font-bold text-yellow-300' }, `$${totalOwed}`)
+            ),
+            React.createElement(
+              'div',
+              { className: 'bg-gray-800 p-4 rounded-lg' },
+              React.createElement('div', { className: 'text-sm text-gray-400' }, 'Paid (Archive)'),
+              React.createElement('div', { className: 'text-xl font-bold text-green-400' }, `$${totalPaid}`)
+            )
           ),
 
           activeGames.length === 0
-            ? React.createElement('div', { className: 'text-center text-gray-400 py-10' }, 'No games scheduled')
+            ? React.createElement('div', { className: 'text-center text-gray-400 py-10' }, 'No active games (owed).')
             : activeGames.map(g =>
-                React.createElement(GameCard, { key: g.id, game: g, onDelete: () => deleteActive(g.id) })
+                React.createElement(GameCard, {
+                  key: g.id,
+                  game: g,
+                  showMarkPaid: true,
+                  onMarkPaid: () => markPaid(g.id),
+                  onEdit: () => openEditActive(g),
+                  onDelete: () => deleteActive(g.id)
+                })
               )
         );
       }
@@ -372,9 +502,16 @@
                     ? React.createElement(
                         React.Fragment,
                         null,
-                        React.createElement('div', { className: 'text-sm text-gray-300 mb-2' }, 'Active'),
+                        React.createElement('div', { className: 'text-sm text-gray-300 mb-2' }, 'Active (owed)'),
                         selectedActiveGames.map(g =>
-                          React.createElement(GameCard, { key: g.id, game: g, onDelete: () => deleteActive(g.id) })
+                          React.createElement(GameCard, {
+                            key: g.id,
+                            game: g,
+                            showMarkPaid: true,
+                            onMarkPaid: () => markPaid(g.id),
+                            onEdit: () => openEditActive(g),
+                            onDelete: () => deleteActive(g.id)
+                          })
                         )
                       )
                     : null,
@@ -383,11 +520,13 @@
                     ? React.createElement(
                         React.Fragment,
                         null,
-                        React.createElement('div', { className: 'text-sm text-gray-300 mt-4 mb-2' }, 'Archived'),
+                        React.createElement('div', { className: 'text-sm text-gray-300 mt-4 mb-2' }, 'Archived (paid)'),
                         selectedArchivedGames.map(g =>
                           React.createElement(GameCard, {
                             key: g.id,
                             game: g,
+                            showMarkPaid: false,
+                            onEdit: () => openEditArchived(monthKeyFromDateKey(g.date), g),
                             onDelete: () => deleteArchived(monthKeyFromDateKey(g.date), g.id)
                           })
                         )
@@ -466,10 +605,11 @@
           'div',
           null,
           monthKeys.length === 0
-            ? React.createElement('div', { className: 'text-center text-gray-400 py-10' }, 'Archive is empty (past games auto-move here).')
+            ? React.createElement('div', { className: 'text-center text-gray-400 py-10' }, 'Archive is empty (paid games).')
             : monthKeys.map(mk => {
                 const games = archiveByMonth[mk] || [];
                 const monthTotal = games.reduce((s, g) => s + (Number(g.total) || 0), 0);
+
                 return React.createElement(
                   'div',
                   { key: mk, className: 'mb-6' },
@@ -483,6 +623,8 @@
                     React.createElement(GameCard, {
                       key: g.id,
                       game: g,
+                      showMarkPaid: false,
+                      onEdit: () => openEditArchived(mk, g),
                       onDelete: () => deleteArchived(mk, g.id)
                     })
                   )
@@ -517,7 +659,7 @@
           React.createElement(
             'button',
             {
-              onClick: () => setShowForm(true),
+              onClick: openAddForm,
               className:
                 'fixed bottom-6 left-1/2 -translate-x-1/2 bg-blue-600 hover:bg-blue-500 px-6 py-3 rounded-full shadow-lg font-semibold flex items-center gap-2'
             },
@@ -533,7 +675,9 @@
               'div',
               { className: 'bg-gray-800 w-full p-6 rounded-t-2xl' },
 
-              React.createElement('h2', { className: 'text-xl font-bold mb-4' }, 'Add Game'),
+              React.createElement('h2', { className: 'text-xl font-bold mb-4' },
+                editTarget ? 'Edit Game' : 'Add Game'
+              ),
 
               React.createElement('input', {
                 placeholder: 'League *',
@@ -594,13 +738,19 @@
                 { className: 'flex gap-2 mt-2' },
                 React.createElement(
                   'button',
-                  { className: 'flex-1 bg-gray-600 hover:bg-gray-500 p-2 rounded', onClick: () => setShowForm(false) },
+                  {
+                    className: 'flex-1 bg-gray-600 hover:bg-gray-500 p-2 rounded',
+                    onClick: () => setShowForm(false)
+                  },
                   'Cancel'
                 ),
                 React.createElement(
                   'button',
-                  { className: 'flex-1 bg-blue-600 hover:bg-blue-500 p-2 rounded', onClick: addGame },
-                  'Add'
+                  {
+                    className: 'flex-1 bg-blue-600 hover:bg-blue-500 p-2 rounded',
+                    onClick: saveForm
+                  },
+                  editTarget ? 'Save' : 'Add'
                 )
               )
             )
